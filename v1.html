@@ -264,6 +264,11 @@ html.is-app:not(.s-dark) .app__hint { color: #615d56; }
 #safe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
 .frame.frame--bare { padding: 0; border-radius: 0; background: none; box-shadow: none; }
 .frame--bare .s-screen { border-radius: 0; }
+.frame--fill { height: var(--fill-h, 844px); overflow: hidden; }
+.frame--fill > .s-screen { position: static; height: var(--fill-h, 844px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.frame--fill > .s-screen::-webkit-scrollbar { display: none; }
+.frame--fill > .s-screen > * { flex-shrink: 0; }
+.frame--fill .fill-spacer { flex: none; }
 
 /* The house's tablet */
 .frame.frame--tablet { border-radius: 40px; }
@@ -1037,6 +1042,7 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
   const vh = () => (window.visualViewport ? window.visualViewport.height : window.innerHeight);
   // A phone, upright or sideways: the screen fills the window, without the bezel or the shell's bar.
   const isBare = () => vw() < 600 || vh() < 500;
+  const fillMode = () => standalone() || new URLSearchParams(location.search).get('fill') === '1';
   // Safe areas (notch, home bar) when the app runs from a phone's home screen.
   const safe = () => { let el = document.getElementById('safe'); if (!el) { el = document.createElement('div'); el.id = 'safe'; document.body.appendChild(el); }
     const cs = getComputedStyle(el); return { l: parseFloat(cs.paddingLeft) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0 }; };
@@ -1054,7 +1060,7 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
     const dims = tab ? (bare ? 'data-fw="1180" data-fh="820"' : 'data-fw="1204" data-fh="844"') : (bare ? 'data-fw="390" data-fh="844"' : 'data-fw="414" data-fh="868"');
     const hint = tab && bare && vh() > vw() ? '<p class="app__hint">The house’s tablet: turn your phone sideways.</p>'
       : (!P && bare && window.BMC_WEB && isIOS() && !standalone() ? '<p class="app__hint">For full screen, tap Share, then Add to Home Screen.</p>' : '');
-    return `<div class="app">${bar}${hint}<div class="app__stage${bare ? ' app__stage--bare' : ''}"><div class="holder holder--app" ${dims}><div class="frame${tab ? ' frame--tablet' : ''}${bare ? ' frame--bare' : ''}" id="frame">${s.html}</div></div></div></div>`;
+    return `<div class="app">${bar}${hint}<div class="app__stage${bare ? ' app__stage--bare' : ''}"><div class="holder holder--app" ${dims}><div class="frame${tab ? ' frame--tablet' : ''}${bare ? ' frame--bare' : ''}${bare && !tab && fillMode() ? ' frame--fill' : ''}" id="frame">${s.html}</div></div></div></div>`;
   }
   function appTo(id, persona) {
     clearTimers();
@@ -1112,11 +1118,43 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
     S.focus = on; clearTimers(); render(); window.scrollTo(0, 0);
     const b = document.querySelector(on ? '.focus-exit' : '.focus-btn'); if (b) b.focus({ preventScroll: true });
   }
+  // Full screen: if content would end under a bar pinned at the bottom, add just enough room to scroll it clear.
+  function fillPad(f) {
+    const sc = f.querySelector('.s-screen'); if (!sc) return;
+    sc.querySelectorAll(':scope > .fill-spacer').forEach(x => x.remove());
+    const k = (f.getBoundingClientRect().width / f.offsetWidth) || 1, top = sc.getBoundingClientRect().top, kids = [...sc.children];
+    const pinned = kids.filter(e => getComputedStyle(e).position === 'absolute' && !e.classList.contains('s-toast') && e.offsetHeight > 0 && e.offsetHeight < 200 && Math.abs(e.offsetTop + e.offsetHeight - sc.clientHeight) < 100);
+    if (!pinned.length) return;
+    const barTop = Math.min(...pinned.map(e => e.offsetTop));
+    let last = 0;
+    kids.filter(e => getComputedStyle(e).position !== 'absolute').forEach(c => [c, ...c.querySelectorAll('*')].forEach(e => {
+      if (e.children.length && !/^(IMG|SVG|BUTTON|A|INPUT)$/i.test(e.tagName)) return;
+      const r = e.getBoundingClientRect(); if (!r.height || !r.width) return;
+      last = Math.max(last, (r.bottom - top) / k + sc.scrollTop);
+    }));
+    // The content must reach last + 12 + the pinned bars' height; the spacer makes up the difference.
+    const sp = document.createElement('div'); sp.className = 'fill-spacer'; sp.style.height = '0px'; sc.appendChild(sp);
+    const end = (sp.getBoundingClientRect().top - top) / k + sc.scrollTop, room = last + 12 + (sc.clientHeight - barTop) - end;
+    if (room > 0) sp.style.height = Math.ceil(room) + 'px'; else sp.remove();
+  }
+  document.addEventListener('click', () => setTimeout(() => { const f = document.querySelector('#frame.frame--fill'); if (f) fillPad(f); }, 80));
   function fit() {
     const avail = Math.max(360, window.innerHeight - 170);
     document.querySelectorAll('.holder').forEach(h => {
       const f = h.firstElementChild, fw = +(h.dataset.fw || 414), fh = +(h.dataset.fh || 868);
       let sc;
+      if (h.classList.contains('holder--app') && f.classList.contains('frame--fill')) {
+        // Fill the phone's width; the screen takes the height that is left.
+        const bar = (document.querySelector('.appbar') || { offsetHeight: 0 }).offsetHeight + ((document.querySelector('.app__hint') || { offsetHeight: 0 }).offsetHeight);
+        const sa = safe(), sc = Math.min(1.5, (vw() - sa.l - sa.r) / fw), H = Math.max(560, (vh() - bar - sa.b) / sc);
+        f.style.setProperty('--fill-h', H + 'px'); f.style.transform = `scale(${sc})`;
+        h.style.width = fw * sc + 'px'; h.style.height = H * sc + 'px';
+        fillPad(f);
+        // Again once the entrance animations have finished (they move the blocks while they play).
+        Promise.all(f.getAnimations({ subtree: true }).filter(a => a.effect && a.effect.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {})))
+          .then(() => { if (f.isConnected) fillPad(f); });
+        return;
+      }
       if (h.classList.contains('holder--app')) {
         const bar = (document.querySelector('.appbar') || { offsetHeight: 0 }).offsetHeight + ((document.querySelector('.app__hint') || { offsetHeight: 0 }).offsetHeight);
         const pad = isBare() ? 0 : 32, top = isBare() ? 0 : ($('.bar') || { offsetHeight: 0 }).offsetHeight, sa = isBare() ? safe() : { l: 0, r: 0, b: 0 };
