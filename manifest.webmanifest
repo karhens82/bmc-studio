@@ -1,6 +1,6 @@
 {
- "name": "BuildMyCar Studio",
- "short_name": "BMC Studio",
+ "name": "BMC Atelier",
+ "short_name": "BMC Atelier",
  "start_url": "./#app",
  "scope": "./",
  "display": "standalone",
