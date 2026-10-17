@@ -265,7 +265,7 @@ html.is-app:not(.s-dark) .app__hint { color: #615d56; }
 .frame.frame--bare { padding: 0; border-radius: 0; background: none; box-shadow: none; }
 .frame--bare .s-screen { border-radius: 0; }
 .app__stage--fill { padding-bottom: 0 !important; }
-.frame--fill { --safe-t: calc(env(safe-area-inset-top, 0px) / var(--sc, 1)); --safe-b: calc(env(safe-area-inset-bottom, 0px) / var(--sc, 1)); --tabh: calc(72px + max(18px, var(--safe-b))); height: var(--fill-h, 844px); overflow: hidden; }
+.frame--fill { --safe-t: calc(env(safe-area-inset-top, 0px) / var(--sc, 1)); --safe-b: calc(env(safe-area-inset-bottom, 0px) / var(--sc, 1)); --tabpad: max(6px, calc(var(--safe-b) - 16px)); --tabh: calc(72px + var(--tabpad)); height: var(--fill-h, 844px); overflow: hidden; }
 .frame--fill > .s-screen { position: static; height: var(--fill-h, 844px); overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: none; }
 .frame--fill > .s-screen::-webkit-scrollbar { display: none; }
 .frame--fill > .s-screen > * { flex-shrink: 0; }
@@ -277,7 +277,8 @@ html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .appbar__who b { co
 html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .appbar__who > span:last-child { color: #615d56; }
 html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .person { color: #7c5c29; box-shadow: inset 0 0 0 1px #7c5c29; }
 html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .appbar__btn { color: #7c5c29; border-color: rgba(124, 92, 41, .55); }
-.frame--fill .s-tabbar { height: var(--tabh); padding-bottom: max(18px, var(--safe-b)); }
+.frame--fill .s-tabbar { height: var(--tabh); padding-bottom: var(--tabpad); }
+html.fill-on, html.fill-on body, html.fill-on .app { background: var(--fill-bg) !important; overflow: hidden; }
 .frame--fill .s-screen > div[style*="bottom: 90px"] { bottom: var(--tabh) !important; }
 .frame--fill .s-screen [style*="padding: 16px 20px 152px"] { padding-bottom: calc(62px + var(--tabh)) !important; }
 .frame--fill .s-screen [style*="padding: 14px 20px 104px"] { padding-bottom: calc(14px + var(--tabh)) !important; }
@@ -805,6 +806,7 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
     root.classList.toggle('is-standalone', !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)));
     { const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.setAttribute('content', noir || root.classList.contains('is-standalone') ? '#0f0e0c' : '#f7f3eb'); }
     document.querySelectorAll('[data-theme-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeSet === S.theme)));
+    if (document.querySelector('#frame.frame--fill')) fit();  // the space below the app follows the look
   }
   applyTheme();
   try { const l = localStorage.getItem('bmc-studio-lens2'); if (l === 'side' || l === 'story') S.lens = l; } catch (e) {}
@@ -1062,7 +1064,8 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
   // The whole viewport, read from a fixed element (on an iPhone home-screen app this is the full screen).
   const viewH = () => { let pr = document.getElementById('vh-probe'); if (!pr) { pr = document.createElement('div'); pr.id = 'vh-probe';
     pr.style.cssText = 'position:fixed;top:0;bottom:0;left:0;width:1px;visibility:hidden;pointer-events:none'; document.body.appendChild(pr); }
-    return Math.max(pr.offsetHeight, window.innerHeight || 0); };
+    const scr = standalone() && window.screen ? (matchMedia('(orientation: portrait)').matches ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height)) : 0;
+    return Math.max(pr.offsetHeight, window.innerHeight || 0, scr); };
   // Safe areas (notch, home bar) when the app runs from a phone's home screen.
   const safe = () => { let el = document.getElementById('safe'); if (!el) { el = document.createElement('div'); el.id = 'safe'; document.body.appendChild(el); }
     const cs = getComputedStyle(el); return { l: parseFloat(cs.paddingLeft) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0 }; };
@@ -1139,6 +1142,7 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
     const b = document.querySelector(on ? '.focus-exit' : '.focus-btn'); if (b) b.focus({ preventScroll: true });
   }
   function fit() {
+    document.documentElement.classList.remove('fill-on');
     const avail = Math.max(360, window.innerHeight - 170);
     document.querySelectorAll('.holder').forEach(h => {
       const f = h.firstElementChild, fw = +(h.dataset.fw || 414), fh = +(h.dataset.fh || 868);
@@ -1150,6 +1154,7 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
         const hint = (document.querySelector('.app__hint') || { offsetHeight: 0 }).offsetHeight;
         const sa = safe(), sc = Math.min(1.5, (vw() - sa.l - sa.r) / fw), H = Math.max(560, (viewH() - hint) / sc);
         f.style.setProperty('--fill-h', H + 'px'); f.style.setProperty('--sc', sc); f.style.transform = `scale(${sc})`;
+        { const tb = scr && scr.querySelector(':scope > .s-tabbar'); document.documentElement.style.setProperty('--fill-bg', getComputedStyle(tb || scr || f).backgroundColor); document.documentElement.classList.add('fill-on'); }
         h.style.width = fw * sc + 'px'; h.style.height = H * sc + 'px';
         return;
       }
