@@ -264,14 +264,25 @@ html.is-app:not(.s-dark) .app__hint { color: #615d56; }
 #safe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
 .frame.frame--bare { padding: 0; border-radius: 0; background: none; box-shadow: none; }
 .frame--bare .s-screen { border-radius: 0; }
-.frame--fill { height: var(--fill-h, 844px); overflow: hidden; }
-.frame--fill > .s-screen { position: static; height: var(--fill-h, 844px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.app__stage--fill { padding-bottom: 0 !important; }
+.frame--fill { --safe-t: calc(env(safe-area-inset-top, 0px) / var(--sc, 1)); --safe-b: calc(env(safe-area-inset-bottom, 0px) / var(--sc, 1)); --tabh: calc(72px + max(18px, var(--safe-b))); height: var(--fill-h, 844px); overflow: hidden; }
+.frame--fill > .s-screen { position: static; height: var(--fill-h, 844px); overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: none; }
 .frame--fill > .s-screen::-webkit-scrollbar { display: none; }
 .frame--fill > .s-screen > * { flex-shrink: 0; }
-.frame--fill .fill-spacer { flex: none; }
-.app__stage--fill { padding-bottom: 0 !important; }
-.frame--fill .s-tabbar { height: calc(72px + max(18px, env(safe-area-inset-bottom, 0px))); padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }
-.frame--fill .s-screen > div[style*="bottom: 90px"] { bottom: calc(72px + max(18px, env(safe-area-inset-bottom, 0px))) !important; }
+.frame--fill > .s-screen > .s-band { position: sticky; top: 0; z-index: 4; height: calc(50px + var(--safe-t)); padding-top: calc(4px + var(--safe-t)); }
+.frame--fill .appbar--in { padding-top: 0; min-height: 46px; }
+.frame--fill .appbar--in:first-child { padding-top: var(--safe-t); min-height: calc(46px + var(--safe-t)); }
+html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) { background: #f7f3eb; color: #16130f; border-bottom-color: #d5d0c6; }
+html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .appbar__who b { color: #16130f; }
+html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .appbar__who > span:last-child { color: #615d56; }
+html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .person { color: #7c5c29; box-shadow: inset 0 0 0 1px #7c5c29; }
+html:not(.s-dark) .frame--fill .appbar--in:not(:first-child) .appbar__btn { color: #7c5c29; border-color: rgba(124, 92, 41, .55); }
+.frame--fill .s-tabbar { height: var(--tabh); padding-bottom: max(18px, var(--safe-b)); }
+.frame--fill .s-screen > div[style*="bottom: 90px"] { bottom: var(--tabh) !important; }
+.frame--fill .s-screen [style*="padding: 16px 20px 152px"] { padding-bottom: calc(62px + var(--tabh)) !important; }
+.frame--fill .s-screen [style*="padding: 14px 20px 104px"] { padding-bottom: calc(14px + var(--tabh)) !important; }
+.frame--fill .s-screen:has(> .s-tabbar):not(:has([style*="padding: 16px 20px 152px"], [style*="padding: 14px 20px 104px"]))::after { content: ""; flex: none; height: var(--tabh); }
+.frame--fill .s-screen:has(> div[style*="bottom: 90px"])::after { content: ""; flex: none; height: calc(var(--tabh) + 80px) !important; }
 
 /* The house's tablet */
 .frame.frame--tablet { border-radius: 40px; }
@@ -1048,6 +1059,10 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
   // A phone, upright or sideways: the screen fills the window, without the bezel or the shell's bar.
   const isBare = () => vw() < 600 || vh() < 500;
   const fillMode = () => standalone() || new URLSearchParams(location.search).get('fill') === '1';
+  // The whole viewport, read from a fixed element (on an iPhone home-screen app this is the full screen).
+  const viewH = () => { let pr = document.getElementById('vh-probe'); if (!pr) { pr = document.createElement('div'); pr.id = 'vh-probe';
+    pr.style.cssText = 'position:fixed;top:0;bottom:0;left:0;width:1px;visibility:hidden;pointer-events:none'; document.body.appendChild(pr); }
+    return Math.max(pr.offsetHeight, window.innerHeight || 0); };
   // Safe areas (notch, home bar) when the app runs from a phone's home screen.
   const safe = () => { let el = document.getElementById('safe'); if (!el) { el = document.createElement('div'); el.id = 'safe'; document.body.appendChild(el); }
     const cs = getComputedStyle(el); return { l: parseFloat(cs.paddingLeft) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0 }; };
@@ -1123,41 +1138,19 @@ const FACE = '<path d="M24 26v5M48 26v5M36 26v13h-3M27 48c5 4 13 4 18 0"/>';
     S.focus = on; clearTimers(); render(); window.scrollTo(0, 0);
     const b = document.querySelector(on ? '.focus-exit' : '.focus-btn'); if (b) b.focus({ preventScroll: true });
   }
-  // Full screen: if content would end under a bar pinned at the bottom, add just enough room to scroll it clear.
-  function fillPad(f) {
-    const sc = f.querySelector('.s-screen'); if (!sc) return;
-    sc.querySelectorAll(':scope > .fill-spacer').forEach(x => x.remove());
-    const k = (f.getBoundingClientRect().width / f.offsetWidth) || 1, top = sc.getBoundingClientRect().top, kids = [...sc.children];
-    const pinned = kids.filter(e => getComputedStyle(e).position === 'absolute' && !e.classList.contains('s-toast') && e.offsetHeight > 0 && e.offsetHeight < 200 && Math.abs(e.offsetTop + e.offsetHeight - sc.clientHeight) < 100);
-    if (!pinned.length) return;
-    const barTop = Math.min(...pinned.map(e => e.offsetTop));
-    let last = 0;
-    kids.filter(e => getComputedStyle(e).position !== 'absolute').forEach(c => [c, ...c.querySelectorAll('*')].forEach(e => {
-      if (e.children.length && !/^(IMG|SVG|BUTTON|A|INPUT)$/i.test(e.tagName)) return;
-      const r = e.getBoundingClientRect(); if (!r.height || !r.width) return;
-      last = Math.max(last, (r.bottom - top) / k + sc.scrollTop);
-    }));
-    // The content must reach last + 12 + the pinned bars' height; the spacer makes up the difference.
-    const sp = document.createElement('div'); sp.className = 'fill-spacer'; sp.style.height = '0px'; sc.appendChild(sp);
-    const end = (sp.getBoundingClientRect().top - top) / k + sc.scrollTop, room = last + 12 + (sc.clientHeight - barTop) - end;
-    if (room > 0) sp.style.height = Math.ceil(room) + 'px'; else sp.remove();
-  }
-  document.addEventListener('click', () => setTimeout(() => { const f = document.querySelector('#frame.frame--fill'); if (f) fillPad(f); }, 80));
   function fit() {
     const avail = Math.max(360, window.innerHeight - 170);
     document.querySelectorAll('.holder').forEach(h => {
       const f = h.firstElementChild, fw = +(h.dataset.fw || 414), fh = +(h.dataset.fh || 868);
       let sc;
       if (h.classList.contains('holder--app') && f.classList.contains('frame--fill')) {
-        // Fill the phone's width; the screen takes the height that is left.
-        const bar = (document.querySelector('.appbar') || { offsetHeight: 0 }).offsetHeight + ((document.querySelector('.app__hint') || { offsetHeight: 0 }).offsetHeight);
-        const sa = safe(), sc = Math.min(1.5, (vw() - sa.l - sa.r) / fw), H = Math.max(560, (vh() - bar) / sc);
-        f.style.setProperty('--fill-h', H + 'px'); f.style.transform = `scale(${sc})`;
+        // The demo bar moves inside the screen, under the screen's own top bar; the frame takes the whole viewport.
+        const scr = f.querySelector('.s-screen'), ab = document.querySelector('.app > .appbar');
+        if (ab && scr) { ab.classList.add('appbar--in'); const band = scr.querySelector(':scope > .s-band'); if (band) band.after(ab); else scr.prepend(ab); }
+        const hint = (document.querySelector('.app__hint') || { offsetHeight: 0 }).offsetHeight;
+        const sa = safe(), sc = Math.min(1.5, (vw() - sa.l - sa.r) / fw), H = Math.max(560, (viewH() - hint) / sc);
+        f.style.setProperty('--fill-h', H + 'px'); f.style.setProperty('--sc', sc); f.style.transform = `scale(${sc})`;
         h.style.width = fw * sc + 'px'; h.style.height = H * sc + 'px';
-        fillPad(f);
-        // Again once the entrance animations have finished (they move the blocks while they play).
-        Promise.all(f.getAnimations({ subtree: true }).filter(a => a.effect && a.effect.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {})))
-          .then(() => { if (f.isConnected) fillPad(f); });
         return;
       }
       if (h.classList.contains('holder--app')) {
